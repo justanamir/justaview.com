@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"fmt"
 	"net/http"
 
 	"justaview.com/views"
@@ -16,6 +17,12 @@ type Users struct {
 	NewView *views.View
 }
 
+//SignupForm struct with tags for the schema package
+type SignupForm struct {
+	Email    string `schema:"email"`
+	Password string `schema:"password"`
+}
+
 //New is used to render the form where a user can
 //create a new user account.
 //
@@ -24,4 +31,17 @@ func (u *Users) New(w http.ResponseWriter, r *http.Request) {
 	if err := u.NewView.Render(w, nil); err != nil {
 		panic(err)
 	}
+}
+
+//Create is used to process the sign up form when a user
+//tries to create a new user account.
+//
+//POST /signup
+func (u *Users) Create(w http.ResponseWriter, r *http.Request) {
+	var form SignupForm
+	if err := parseForm(r, &form); err != nil {
+		panic(err)
+	}
+	fmt.Fprintln(w, "Email is", form.Email)
+	fmt.Fprintln(w, "Password is", form.Password)
 }
