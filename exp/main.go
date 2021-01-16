@@ -1,10 +1,9 @@
 package main
 
 import (
-	"database/sql"
 	"fmt"
 
-	_ "github.com/lib/pq"
+	"justaview.com/models"
 )
 
 const (
@@ -19,30 +18,31 @@ func main() {
 	psqlInfo := fmt.Sprintf("host=%s port=%d user=%s "+
 		"password=%d dbname=%s sslmode=disable",
 		host, port, user, password, dbname)
-	db, err := sql.Open("postgres", psqlInfo)
+	us, err := models.NewUserService(psqlInfo)
 	if err != nil {
 		panic(err)
 	}
-
-	var id int
-	for i := 1; i < 6; i++ {
-		//creating fake table data
-		userId := 1
-		if i > 3 {
-			userId = 2
-		}
-		amount := 1000 * i
-		description := fmt.Sprintf("USB-C Adapter x%d", i)
-
-		err = db.QueryRow(`
-			INSERT INTO orders (user_id, amount, description)
-			VALUES ($1, $2, $3)
-			RETURNING id`,
-			userId, amount, description).Scan(&id)
-		if err != nil {
-			panic(err)
-		}
-		fmt.Println("Created an order with the ID:", id)
+	defer us.Close()
+	us.DestructiveReset()
+	user := models.User{
+		Name:     "Michael Scott",
+		Email:    "michael@dundermifflin.com",
+		Password: "bestboss",
 	}
-	db.Close()
+	err = us.Create(&user)
+	if err != nil {
+		panic(err)
+	}
+	// Verify that the user has a Remember and RememberHash
+	fmt.Printf("%+v\n", user)
+	if user.Remember == "" {
+		panic("Invalid remember token")
+	}
+	// Now verify that we can lookup a user with that remember
+	// token
+	user2, err := us.ByRemember(user.Remember)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Printf("%+v\n", *user2)
 }
