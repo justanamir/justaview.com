@@ -1,7 +1,6 @@
 package models
 
 import (
-	"errors"
 	"regexp"
 	"strings"
 
@@ -33,15 +32,11 @@ type UserDB interface {
 	ByID(id uint) (*User, error)
 	ByEmail(email string) (*User, error)
 	ByRemember(token string) (*User, error)
+
 	// Methods for altering users
 	Create(user *User) error
 	Update(user *User) error
 	Delete(id uint) error
-	// Used to close a DB connection
-	Close() error
-	// Migration helpers
-	AutoMigrate() error
-	DestructiveReset() error
 }
 
 // UserService is a set of methods used to manipulate and
@@ -88,52 +83,63 @@ type userValidator struct {
 
 type userValFn func(*User) error
 
+type modelError string
+
+func (e modelError) Error() string {
+	return string(e)
+}
+func (e modelError) Public() string {
+	s := strings.Replace(string(e), "models: ", "", 1)
+	split := strings.Split(s, " ")
+	split[0] = strings.Title(split[0])
+	return strings.Join(split, " ")
+}
+
 const hmacSecretKey = "secret-hmac-key"
 
-var (
+const (
 	//ErrNotFound is returned when a resource cannot be found
 	//in the database.
-	ErrNotFound = errors.New("models: resource not found")
+	ErrNotFound modelError = "models: resource not found"
 
-	// ErrInvalidID is returned when an invalid ID is provided
+	// ErrIDInvalid is returned when an invalid ID is provided
 	// to a method like Delete.
-	ErrIDInvalid = errors.New("models: ID provided was invalid")
+	ErrIDInvalid modelError = "models: ID provided was invalid"
 
-	// ErrInvalidPassword is returned when an invalid password
+	// ErrPasswordIncorrect is returned when an invalid password
 	// is used when attempting to authenticate a user.
-	ErrPasswordIncorrect = errors.New(
-		"models: incorrect password provided")
+	ErrPasswordIncorrect modelError = "models: incorrect password provided"
 
 	// ErrEmailRequired is returned when an email address is
 	// not provided when creating a user
-	ErrEmailRequired = errors.New("models: email address is required")
+	ErrEmailRequired modelError = "models: email address is required"
 
 	// ErrEmailInvalid is returned when an email address provided
 	// does not match any of our requirements
-	ErrEmailInvalid = errors.New("models: email address is not valid")
+	ErrEmailInvalid modelError = "models: email address is not valid"
 
 	// ErrEmailTaken is returned when an update or create is attempted
 	// with an email address that is already in use.
-	ErrEmailTaken = errors.New("models: email address is already taken")
+	ErrEmailTaken modelError = "models: email address is already taken"
 
 	// ErrPasswordTooShort is returned when a user tries to set
 	// a password that is less than 8 characters long.
-	ErrPasswordTooShort = errors.New("models: password must " +
-		"be at least 8 characters long")
+	ErrPasswordTooShort modelError = "models: password must " +
+		"be at least 8 characters long"
 
 	// ErrPasswordRequired is returned when a create is attempted
 	// without a user password provided.
-	ErrPasswordRequired = errors.New("models: password is required")
+	ErrPasswordRequired modelError = "models: password is required"
 
 	// ErrRememberRequired is returned when a create or update
 	// is attempted without a user remember token hash
-	ErrRememberRequired = errors.New("models: remember token " +
-		"is required")
+	ErrRememberRequired modelError = "models: remember token " +
+		"is required"
 
 	// ErrRememberTooShort is returned when a remember token is
 	// not at least 32 bytes
-	ErrRememberTooShort = errors.New("models: remember token " +
-		"must be at least 32 bytes")
+	ErrRememberTooShort modelError = "models: remember token " +
+		"must be at least 32 bytes"
 )
 
 var userPwPepper = "hahaha"
@@ -195,15 +201,6 @@ func first(db *gorm.DB, dst interface{}) error {
 	return err
 }
 
-// DestructiveReset drops the user table and rebuilds it
-func (ug *userGorm) DestructiveReset() error {
-	err := ug.db.DropTableIfExists(&User{}).Error
-	if err != nil {
-		return err
-	}
-	return ug.AutoMigrate()
-}
-
 // Create will create the provided user and backfill data
 // like the ID, CreatedAt, and UpdatedAt fields.
 func (uv *userValidator) Create(user *User) error {
@@ -230,17 +227,13 @@ func (ug *userGorm) Create(user *User) error {
 	return ug.db.Create(user).Error
 }
 
-func NewUserService(connectionInfo string) (UserService, error) {
-	ug, err := newUserGorm(connectionInfo)
-	if err != nil {
-		return nil, err
-	}
-	// this old line was in newUserGorm
+func NewUserService(db *gorm.DB) UserService {
+	ug := &userGorm{db}
 	hmac := hash.NewHMAC(hmacSecretKey)
 	uv := newUserValidator(ug, hmac)
 	return &userService{
 		UserDB: uv,
-	}, nil
+	}
 }
 
 func newUserValidator(udb UserDB,
@@ -251,22 +244,6 @@ func newUserValidator(udb UserDB,
 		emailRegex: regexp.MustCompile(
 			`^[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,16}$`),
 	}
-}
-
-func newUserGorm(connectionInfo string) (*userGorm, error) {
-	db, err := gorm.Open("postgres", connectionInfo)
-	if err != nil {
-		return nil, err
-	}
-	db.LogMode(true)
-	return &userGorm{
-		db: db,
-	}, nil
-}
-
-//Close the userGorm database connection
-func (ug *userGorm) Close() error {
-	return ug.db.Close()
 }
 
 // Update will hash a remember token if it is provided.
@@ -306,15 +283,6 @@ func (uv *userValidator) Delete(id uint) error {
 func (ug *userGorm) Delete(id uint) error {
 	user := User{Model: gorm.Model{ID: id}}
 	return ug.db.Delete(&user).Error
-}
-
-// AutoMigrate will attempt to automatically migrate the
-// users table
-func (ug *userGorm) AutoMigrate() error {
-	if err := ug.db.AutoMigrate(&User{}).Error; err != nil {
-		return err
-	}
-	return nil
 }
 
 // Authenticate can be used to authenticate a user with the

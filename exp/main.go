@@ -18,7 +18,7 @@ func main() {
 	psqlInfo := fmt.Sprintf("host=%s port=%d user=%s "+
 		"password=%d dbname=%s sslmode=disable",
 		host, port, user, password, dbname)
-	us, err := models.NewUserService(psqlInfo)
+	us, err := models.NewServices(psqlInfo)
 	if err != nil {
 		panic(err)
 	}
